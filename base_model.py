@@ -25,12 +25,12 @@ class Model(object):
         self.sess = tf.Session()
         # Define the learning rate for the neural net
         self.global_step = tf.Variable(0, trainable=False)
-        # self.learning_rate = tf.train.exponential_decay(learning_rate=learning_rate,
-        #                                                 global_step=self.global_step,
-        #                                                 decay_steps=1000,
-        #                                                 decay_rate=0.96,
-        #                                                 staircase=True)
-        self.learning_rate = learning_rate
+        self.learning_rate = tf.train.exponential_decay(learning_rate=learning_rate,
+                                                        global_step=self.global_step,
+                                                        decay_steps=1000,
+                                                        decay_rate=0.96,
+                                                        staircase=True)
+        # self.learning_rate = learning_rate
         self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
 
         self.num_filters = num_filters
@@ -72,13 +72,14 @@ class Model(object):
         # The attention tensor is set to ones during pre-training
         feed_dict['a:0'] = np.ones([X.shape[0], self.num_features])
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
+        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.pre_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features])})
+                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: np.ones([10, self.num_features])})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -101,9 +102,10 @@ class Model(object):
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
         # Sample the attention vector from the Bernoulli distribution
-        attention = self.sess.run(self.bernoulli.sample(), feed_dict=feed_dict)
+        attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
+        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.train_step],
                                    feed_dict=feed_dict)
@@ -111,7 +113,7 @@ class Model(object):
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
                                 feed_dict={self.X: X[0:10],
-                                           self.feedback: np.ones([10, self.num_features])})
+                                           self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10]})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -135,16 +137,17 @@ class Model(object):
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
         # Sample the attention vector from the Bernoulli distribution
-        attention = self.sess.run(self.bernoulli.sample(), feed_dict=feed_dict)
+        attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = feedback
+        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.feedback_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: feedback[0:10]})
+                                feed_dict={self.X: X[0:10], self.feedback: feedback[0:10], self.attention: attention[0:10]})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -168,15 +171,16 @@ class Model(object):
         if pre_trainining:
             attention = np.ones([X.shape[0], self.num_features])
         else:
-            attention = self.sess.run(self.bernoulli.sample(), feed_dict=feed_dict)
+            attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
+        feed_dict['phase:0'] = 0
         # Run the evaluation and write the results to Tensorboard
         summary = self.sess.run(self.merged,
                                 feed_dict=feed_dict)
         self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features])})
+                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10]})
         self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
 
     def predict(self, X):
@@ -184,7 +188,7 @@ class Model(object):
         feed_dict["phase:0"] = 0
         feed_dict["X:0"] = X
         # Sample the attention vector from the Bernoulli distribution
-        attention = self.sess.run(self.bernoulli.sample(), feed_dict=feed_dict)
+        attention = self.sess.run(self.distribution.sample(), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
         # Run the evaluation
@@ -312,8 +316,8 @@ class Model(object):
                                             name='pre_activation{0}'.format(i))
                     activation = nonlinearity(pre_activation,
                                               name='activation{0}'.format(i))
-                    if i > 1:
-                        activation = tf.nn.dropout(activation, keep_prob=self.keep_prob)
+
+                    activation = tf.nn.dropout(activation, keep_prob=self.keep_prob)
                     if batch_norm:
                         activation = tf.contrib.layers.batch_norm(activation,
                                                                   center=True,

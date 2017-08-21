@@ -20,7 +20,7 @@ def main(_):
     if FLAGS.model == 'Cat':
         pre_training = True
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
         pre_training = False
         net = Gumbel_Net(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch,
@@ -28,7 +28,7 @@ def main(_):
     elif FLAGS.model == 'RL':
         pre_training = True
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
 
     X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
     y_train = mnist.train.labels
@@ -50,7 +50,7 @@ def main(_):
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
             for i in range(0, len(X_train), batch_size):
                 _x, _y = input_fn(X_train[i:i+batch_size], y_train[i:i+batch_size], batch_size=batch_size)
-                net.pre_train(_x, _y)
+                net.pre_train(_x, _y, dropout=0.8)
 
     print("Training")
     for epoch in tqdm(range(FLAGS.epochs)):
@@ -61,7 +61,7 @@ def main(_):
         net.save()
         for i in range(0, len(X_train), batch_size):
             _x, _y, _train_coords = X_train[i:i+batch_size], y_train[i:i+batch_size], train_coords[i:i+batch_size]
-            net.train(_x, _y)
+            net.train(_x, _y, dropout=1.0)
 
     if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat':
         print("Feedback Training")
@@ -73,7 +73,45 @@ def main(_):
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
             for i in range(0, len(X_train), batch_size):
                 _x, _y, _train_coords = input_fn(X_train, y_train, train_coords, batch_size=batch_size)
-                net.feedback_train(_x, _y, _train_coords)
+                net.feedback_train(_x, _y, _train_coords, dropout=1.0)
+
+    # if pre_training:
+    #     print("Pre-training")
+    #     for i in tqdm(range(1000)):
+    #         if i % 100 == 0:
+    #             _x, _y = mnist.test.next_batch(batch_size)
+    #             _x, _ = convertCluttered(_x, 60)
+    #             net.evaluate(_x, _y, pre_trainining=True)
+    #             # print(net.confusion_matrix(_x, _y))
+    #             net.save()
+    #         _x, _y  = mnist.train.next_batch(batch_size)
+    #         _x, _ = convertCluttered(_x, 60)
+    #         net.pre_train(_x, _y, dropout=1.0)
+    #
+    # print("Training")
+    # for i in tqdm(range(1000)):
+    #     if i % 100 == 0:
+    #         _x, _y = mnist.test.next_batch(batch_size)
+    #         _x, _ = convertCluttered(_x, 60)
+    #         net.evaluate(_x, _y)
+    #         # print(net.confusion_matrix(_x, _y))
+    #         net.save()
+    #     _x, _y  = mnist.train.next_batch(batch_size)
+    #     _x, _ = convertCluttered(_x, 60)
+    #     net.train(_x, _y, dropout=1.0)
+    #
+    # if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat':
+    #     print("Feedback Training")
+    #     for i in tqdm(range(1000)):
+    #         if i % 100 == 0:
+    #             _x, _y = mnist.test.next_batch(batch_size)
+    #             _x, _ = convertCluttered(_x, 60)
+    #             net.evaluate(_x, _y)
+    #             # print(net.confusion_matrix(_x, _y))
+    #             net.save()
+    #         _x, _y = mnist.train.next_batch(batch_size)
+    #         _x, _train_coords = convertCluttered(_x, 60)
+    #         net.train(_x, _y, _train_coords, dropout=1.0)
 
 
 if __name__ == '__main__':
@@ -140,14 +178,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_filters', '-fi',
         type=int,
-        default='32',
+        default=16,
         help=''' The number of filters in the conv net. '''
     )
 
     parser.add_argument(
         '--num_features', '-fe',
         type=int,
-        default='400',
+        default=400,
         help=''' The number of features used by the agent. '''
     )
 
