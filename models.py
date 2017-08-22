@@ -9,10 +9,10 @@ from base_model import Model
 
 class Bernoulli_Net(Model):
     """ Creates a deep learning model. """
-    def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, learning_rate, feedback_distance, directory, meta=None):
+    def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, meta=None):
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size)
-
+        self.num_samples = num_samples
         if meta is not None:
             # Load pre-trained model
             self.saver = tf.train.import_meta_graph(directory + '/' + meta)
@@ -51,8 +51,9 @@ class Bernoulli_Net(Model):
         # Define a Bernoulli distribution based on the probabilities estimated by the controller
         self.distribution = tf.contrib.distributions.Bernoulli(logits=probs_logits, allow_nan_stats=False, dtype=tf.float32)
         self.attention = tf.placeholder(tf.float32, shape=[None, self.num_features], name="a")
+        dynamic_num_samples = tf.floordiv(tf.shape(self.attention)[0], tf.shape(self.X)[0])
         # Calculate the probability of each attention vector
-        sample_probs = self.distribution.prob(self.attention)
+        sample_probs = tf.reshape(self.distribution.prob(tf.reshape(self.attention, [dynamic_num_samples, -1, self.num_features])), [-1, self.num_features])
 
         # Define summaries to monitor the agent
         attention_summary = tf.summary.histogram('a', self.attention)
@@ -73,6 +74,7 @@ class Bernoulli_Net(Model):
         Lv_summary = tf.summary.scalar('Lvb', Lvb)
 
         # Multiply the features by the gates defined by attention
+        features = tf.reshape(tf.tile(tf.reshape(features, [-1]), [dynamic_num_samples]), [-1, self.num_features, self.num_filters])
         zoom_X = tf.multiply(features, tf.reshape(self.attention, [-1, self.num_features, 1]), name='Zoom_X')
         flat_zoom_X = tf.reshape(zoom_X, [-1, self.num_features*self.num_filters])
 
@@ -88,7 +90,7 @@ class Bernoulli_Net(Model):
         # Define the loss function
         cost = tf.nn.softmax_cross_entropy_with_logits(
                 logits=self.logits,
-                labels=self.label,
+                labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes]),
                 name='loss_function')
 
         past_cost = tf.Variable(tf.zeros([]), name='past_cost')
@@ -101,8 +103,9 @@ class Bernoulli_Net(Model):
         log_probability = tf.reduce_sum(log_probability, axis=1)
 
         # Define the loss function for the classifier
-        self.loss = cost_mean + (Le + Lb) - (Lve + Lvb)
-        self.policy_loss = tf.reduce_mean(tf.multiply((cost-past_cost), log_probability)) + self.loss
+        self.loss = cost_mean
+        self.policy_loss = tf.reduce_mean(tf.multiply((cost-past_cost), log_probability))
+        self.reg_loss = 10*(Le + Lb) - (Lve + Lvb)
 
         self.pre_train_step = tf.contrib.layers.optimize_loss(
                 cost_mean, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
@@ -115,7 +118,7 @@ class Bernoulli_Net(Model):
                 summaries=["gradients"], variables=classifier_vars, name='CLASSIFIER'),
 
             tf.contrib.layers.optimize_loss(
-                self.policy_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
+                self.policy_loss + self.reg_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
                 summaries=["gradients"], variables=policy_vars, name='REINFORCE')
         ]
 
@@ -137,7 +140,7 @@ class Bernoulli_Net(Model):
                     reduction=Reduction.NONE)
 
         self.feedback_train_step = tf.contrib.layers.optimize_loss(
-            tf.reduce_mean(feedback_cost), global_step=self.global_step, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
+            tf.reduce_mean(feedback_cost) + self.policy_loss + self.reg_loss, global_step=self.global_step, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
             summaries=["gradients"], variables=[policy_vars], name='FEEDBACK_TRAIN')
 
         tf.assign(past_cost, past_cost*0.9 + 0.1*tf.reduce_mean(cost))
@@ -161,7 +164,7 @@ class Bernoulli_Net(Model):
 
 class Cat_Net(Model):
     """ Creates a deep learning model. """
-    def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, num_cat, learning_rate, feedback_distance, directory, meta=None):
+    def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, num_cat, learning_rate, feedback_distance, directory, meta=None):
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size)
 
@@ -186,7 +189,7 @@ class Cat_Net(Model):
                 activation=tf.nn.relu)
 
             conv_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "conv1")
-            self.features = tf.reshape(conv, [-1, self.num_features, self.num_filters])
+            features = tf.reshape(conv, [-1, self.num_features, self.num_filters])
             flat_features = tf.reshape(conv, [-1, self.num_features*self.num_filters])
             # Build the controller to estimate the probability of each feature
             probs_logits, _, policy_reg_loss = self.build_net(
@@ -205,10 +208,11 @@ class Cat_Net(Model):
             # Define a categorical distribution based on the probabilities estimated by the controller
             self.distribution = tf.contrib.distributions.Categorical(probs=tf.reshape(self.probs, [-1, self.num_features, num_cat]), allow_nan_stats=False, dtype=tf.float32)
             self.attention = tf.placeholder(tf.float32, shape=[None, self.num_features], name="a")
+            dynamic_num_samples = tf.floordiv(tf.shape(self.attention)[0], tf.shape(self.X)[0])
 
             attention_summary = tf.summary.histogram('attention', self.attention)
             # Calculate the probability of each attention vector
-            sample_probs = self.distribution.prob(tf.to_int32(self.attention))
+            sample_probs = tf.reshape(self.distribution.prob(tf.reshape(self.attention, [dynamic_num_samples, -1, self.num_features])), [-1, self.num_features])
             probability_summary = tf.summary.histogram('probability', self.probs)
             sample_probability_summary = tf.summary.histogram('sample_probability', sample_probs)
 
@@ -233,6 +237,7 @@ class Cat_Net(Model):
             Lv_summary = tf.summary.scalar('Lvb', Lvb)
 
             # Multiply the features by the gates defined by attention
+            features = tf.reshape(tf.tile(tf.reshape(features, [-1]), [dynamic_num_samples]), [-1, self.num_features, self.num_filters])
             zoom_X = tf.multiply(self.features, (1/num_cat)*tf.reshape(self.attention, [-1, self.num_features, 1]), name='Zoom_X')
             flat_zoom_X = tf.reshape(zoom_X, [-1, self.num_features*self.num_filters])
 
@@ -249,7 +254,7 @@ class Cat_Net(Model):
             # Define the loss function
             cost = tf.nn.softmax_cross_entropy_with_logits(
                     logits=self.logits,
-                    labels=self.label,
+                    labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes]),
                     name='loss_function')
 
             past_cost = tf.Variable(tf.zeros([]), name='past_cost')
@@ -262,8 +267,9 @@ class Cat_Net(Model):
             log_probability = tf.reduce_sum(log_probability, axis=1)
 
             # Define the loss function for the classifier
-            self.loss = cost_mean + (Le + Lb) - (Lve + Lvb)
-            self.policy_loss = tf.reduce_mean(tf.multiply((cost-past_cost), log_probability)) + self.loss
+            self.loss = cost_mean
+            self.policy_loss = tf.reduce_mean(tf.multiply((cost-past_cost), log_probability))
+            self.reg_loss = (Le + Lb) - (Lve + Lvb)
             # Define the train step
             self.pre_train_step = tf.contrib.layers.optimize_loss(
                     cost_mean, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
@@ -275,7 +281,7 @@ class Cat_Net(Model):
                     summaries=["gradients"], variables=classifier_vars, name='CLASSIFIER'),
 
                 tf.contrib.layers.optimize_loss(
-                    self.policy_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.001*self.learning_rate, optimizer=optimizer,
+                    self.policy_loss + self.reg_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.001*self.learning_rate, optimizer=optimizer,
                     summaries=["gradients"], variables=policy_vars, name='REINFORCE')
             ]
 
@@ -297,7 +303,7 @@ class Cat_Net(Model):
                         reduction=Reduction.NONE)
 
             self.feedback_train_step = tf.contrib.layers.optimize_loss(
-                tf.reduce_mean(feedback_cost), global_step=self.global_step, learning_rate=0.001*self.learning_rate, optimizer=optimizer,
+                tf.reduce_mean(feedback_cost) + self.policy_loss + self.reg_loss, global_step=self.global_step, learning_rate=0.001*self.learning_rate, optimizer=optimizer,
                 summaries=["gradients"], variables=[policy_vars], name='FEEDBACK_TRAIN')
 
             tf.assign(past_cost, past_cost*0.9 + 0.1*tf.reduce_mean(cost))

@@ -20,7 +20,7 @@ def main(_):
     if FLAGS.model == 'Cat':
         pre_training = True
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
         pre_training = False
         net = Gumbel_Net(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch,
@@ -28,7 +28,7 @@ def main(_):
     elif FLAGS.model == 'RL':
         pre_training = True
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
 
     X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
     y_train = mnist.train.labels
@@ -187,6 +187,13 @@ if __name__ == '__main__':
         type=int,
         default=400,
         help=''' The number of features used by the agent. '''
+    )
+
+    parser.add_argument(
+        '--num_samples', '-sa',
+        type=int,
+        default=10,
+        help=''' The number of samples per example. '''
     )
 
     parser.add_argument(

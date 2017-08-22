@@ -102,7 +102,7 @@ class Model(object):
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
         # Sample the attention vector from the Bernoulli distribution
-        attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
+        attention = self.sess.run(tf.reshape(self.distribution.sample(self.num_samples), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
         feed_dict['phase:0'] = 1
@@ -137,7 +137,7 @@ class Model(object):
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
         # Sample the attention vector from the Bernoulli distribution
-        attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
+        attention = self.sess.run(tf.reshape(self.distribution.sample(self.num_samples), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = feedback
         feed_dict['phase:0'] = 1
@@ -212,11 +212,13 @@ class Model(object):
         """ Creates summaries for accuracy, auc and loss. """
 
         # Calculate the accuracy for multiclass classification
-        correct_prediction = tf.equal(tf.argmax(self.label, axis=1), tf.argmax(self.predictions, axis=1))
+        dynamic_num_samples = tf.floordiv(tf.shape(self.attention)[0], tf.shape(self.X)[0])
+        label = tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes])
+        correct_prediction = tf.equal(tf.argmax(label, axis=1), tf.argmax(self.predictions, axis=1))
         self.accuracy = tf.reduce_mean(
             tf.cast(correct_prediction, tf.float32))
         # Calculate the confusion matrix
-        confusion = tf.confusion_matrix(labels=tf.argmax(self.label, axis=1), predictions=tf.argmax(self.predictions, axis=1))
+        confusion = tf.confusion_matrix(labels=tf.argmax(label, axis=1), predictions=tf.argmax(self.predictions, axis=1))
         confusion = tf.cast(confusion, dtype=tf.float32)
         # Calculate the kappa accuracy
         sum0 = tf.reduce_sum(confusion, axis=0)
@@ -229,7 +231,7 @@ class Model(object):
         k = (self.accuracy - expected_accuracy) / (1 - expected_accuracy)
         # Calculate the precision
         _, precision = tf.metrics.precision(
-                                    labels=self.label,
+                                    labels=label,
                                     predictions=self.predictions)
         # Add the summaries
         accuracy_summary = tf.summary.scalar('accuracy', self.accuracy)
