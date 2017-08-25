@@ -9,7 +9,7 @@ from sklearn.metrics import cohen_kappa_score
 
 class Model(object):
     """ General model class. """
-    def __init__(self, directory, learning_rate, num_filters, num_features, frame_size):
+    def __init__(self, directory, learning_rate, num_filters, num_features, frame_size, num_samples=1):
         """ Initializes the model and creates a neww seesion.
 
             Parameters
@@ -25,24 +25,26 @@ class Model(object):
         self.sess = tf.Session()
         # Define the learning rate for the neural net
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.train.exponential_decay(learning_rate=learning_rate,
-                                                        global_step=self.global_step,
-                                                        decay_steps=1000,
-                                                        decay_rate=0.96,
-                                                        staircase=True)
-        # self.learning_rate = learning_rate
+        # self.learning_rate = tf.train.exponential_decay(learning_rate=learning_rate,
+        #                                                 global_step=self.global_step,
+        #                                                 decay_steps=1000,
+        #                                                 decay_rate=0.96,
+        #                                                 staircase=True)
+        self.learning_rate = learning_rate
         self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
 
         self.num_filters = num_filters
         self.num_features = num_features
         self.num_classes = 10
         self.frame_size = frame_size
+        self.num_samples = num_samples
         # Define placeholder for the inputs X, the labels y and the users feedback
         self.label = tf.placeholder(tf.float32, shape=[None, self.num_classes], name='y')
         self.X = tf.placeholder(tf.float32, shape=[None, self.frame_size**2], name="X")
+        self.attention = tf.placeholder(tf.float32, shape=[None, self.num_features], name="a")
         self.feedback = tf.placeholder(tf.float32, shape=[None, self.num_features], name="feedback")
         # Create a placeholder that defines the phase: training or testing
-        self.phase = tf.placeholder(tf.bool, name='phase')
+        self.phase = tf.placeholder(tf.int32, name='phase')
 
     def explain(self, X):
         feed_dict = {}
@@ -66,20 +68,20 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = {}
+        feed_dict['phase:0'] = 2
         feed_dict['X:0'] = X
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
         # The attention tensor is set to ones during pre-training
         feed_dict['a:0'] = np.ones([X.shape[0], self.num_features])
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
-        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.pre_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: np.ones([10, self.num_features])})
+                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: np.ones([10, self.num_features]), self.phase: 2})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -98,6 +100,7 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = {}
+        feed_dict['phase:0'] = 1
         feed_dict['X:0'] = X
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
@@ -105,7 +108,6 @@ class Model(object):
         attention = self.sess.run(tf.reshape(self.distribution.sample(self.num_samples), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
-        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.train_step],
                                    feed_dict=feed_dict)
@@ -113,7 +115,7 @@ class Model(object):
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
                                 feed_dict={self.X: X[0:10],
-                                           self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10]})
+                                           self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10], self.phase: 1})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -133,6 +135,7 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = {}
+        feed_dict['phase:0'] = 1
         feed_dict['X:0'] = X
         feed_dict['y:0'] = y
         feed_dict['dropout:0'] = dropout
@@ -140,14 +143,13 @@ class Model(object):
         attention = self.sess.run(tf.reshape(self.distribution.sample(self.num_samples), [-1, self.num_features]), feed_dict=feed_dict)
         feed_dict['a:0'] = attention
         feed_dict['feedback:0'] = feedback
-        feed_dict['phase:0'] = 1
         # Run the training step and write the results to Tensorboard
         summary, _ = self.sess.run([self.merged, self.feedback_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: feedback[0:10], self.attention: attention[0:10]})
+                                feed_dict={self.X: X[0:10], self.feedback: feedback[0:10], self.attention: attention[0:10], self.phase: 1})
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
@@ -169,18 +171,21 @@ class Model(object):
         feed_dict['y:0'] = y
         feed_dict['feedback:0'] = np.ones([X.shape[0], self.num_features])
         if pre_trainining:
+            phase = 2
             attention = np.ones([X.shape[0], self.num_features])
         else:
+            phase = 0
+            feed_dict['phase:0'] = phase
             attention = self.sess.run(tf.reshape(self.distribution.sample(), [-1, self.num_features]), feed_dict=feed_dict)
+        feed_dict['phase:0'] = phase
         feed_dict['a:0'] = attention
-        feed_dict['phase:0'] = 0
         # Run the evaluation and write the results to Tensorboard
         summary = self.sess.run(self.merged,
                                 feed_dict=feed_dict)
         self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Run image summary and write the results to Tensorboard
         summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10]})
+                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10], self.phase: phase})
         self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
 
     def predict(self, X):

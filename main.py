@@ -1,11 +1,12 @@
 import argparse
+import math
 import numpy as np
 import os
 import sys
 import tensorflow as tf
 from tqdm import tqdm
 
-from models import Bernoulli_Net, Cat_Net
+from models import Bernoulli_Net, Cat_Net, Gumbel_Net
 from utils import *
 
 
@@ -22,9 +23,9 @@ def main(_):
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
-        pre_training = False
-        net = Gumbel_Net(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch,
-            num_cat=FLAGS.num_cat, frame_size=FLAGS.frame_size)
+        pre_training = True
+        net = Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
+        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'RL':
         pre_training = True
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
@@ -61,7 +62,7 @@ def main(_):
         net.save()
         for i in range(0, len(X_train), batch_size):
             _x, _y, _train_coords = X_train[i:i+batch_size], y_train[i:i+batch_size], train_coords[i:i+batch_size]
-            net.train(_x, _y, dropout=1.0)
+            net.train(_x, _y, dropout=FLAGS.dropout)
 
     if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat':
         print("Feedback Training")
@@ -73,7 +74,7 @@ def main(_):
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
             for i in range(0, len(X_train), batch_size):
                 _x, _y, _train_coords = input_fn(X_train, y_train, train_coords, batch_size=batch_size)
-                net.feedback_train(_x, _y, _train_coords, dropout=1.0)
+                net.feedback_train(_x, _y, _train_coords, dropout=FLAGS.dropout)
 
     # if pre_training:
     #     print("Pre-training")
@@ -156,7 +157,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_cat', '-nc',
         type=int,
-        default=3,
+        default=2,
         help='The number of categories for categorical distributions. '
     )
 
@@ -192,7 +193,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_samples', '-sa',
         type=int,
-        default=10,
+        default=1,
         help=''' The number of samples per example. '''
     )
 
@@ -205,7 +206,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--frame_size', '-fr',
-        type=str,
+        type=int,
         default=60,
         help=''' The size of the cluttered MNIST image. '''
     )
@@ -215,6 +216,13 @@ if __name__ == '__main__':
         type=str,
         default='cosine',
         help=''' The dissimilarity measure used to evaluate the feedback. '''
+    )
+
+    parser.add_argument(
+        '--dropout', '-dr',
+        type=float,
+        default=1.0,
+        help=''' The probability of keeping a neuron active. '''
     )
 
     FLAGS, unparsed = parser.parse_known_args()
