@@ -10,26 +10,31 @@ from models import Bernoulli_Net, Cat_Net, Gumbel_Net
 from utils import *
 
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def main(_):
     mnist = load_mnist()
-
-    pre_training = False
+    pre_training = FLAGS.pre_train
     if FLAGS.model == 'Conv':
         pre_training = False
         net = Simple_Conv_Net(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch,
             num_cat=FLAGS.num_cat)
     if FLAGS.model == 'Cat':
-        pre_training = True
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
-        pre_training = True
         net = Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau)
     elif FLAGS.model == 'RL':
-        pre_training = True
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
+        num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv)
 
     X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
     y_train = mnist.train.labels
@@ -46,6 +51,9 @@ def main(_):
         for epoch in tqdm(range(FLAGS.epochs)):
             _x, _y = input_fn(X_test, y_test, batch_size=batch_size)
             net.evaluate(_x, _y, pre_trainining=True)
+            X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
+            y_train = mnist.train.labels
+            train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
             # print(net.confusion_matrix(_x, _y))
             net.save()
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
@@ -58,6 +66,9 @@ def main(_):
         X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
         _x, _y = input_fn(X_test, y_test, batch_size=batch_size)
         net.evaluate(_x, _y)
+        X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
+        y_train = mnist.train.labels
+        train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
         # print(net.confusion_matrix(_x, _y))
         net.save()
         for i in range(0, len(X_train), batch_size):
@@ -69,6 +80,9 @@ def main(_):
         for epoch in tqdm(range(FLAGS.epochs)):
             _x, _y = input_fn(X_test, y_test, batch_size=batch_size)
             net.evaluate(_x, _y)
+            X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
+            y_train = mnist.train.labels
+            train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
             # print(net.confusion_matrix(_x, _y))
             net.save()
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
@@ -219,10 +233,31 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--second_conv', '-sc',
+        type=str2bool,
+        default='false',
+        help=''' Wheter to add a second convolutional layer. '''
+    )
+
+    parser.add_argument(
         '--dropout', '-dr',
         type=float,
         default=1.0,
         help=''' The probability of keeping a neuron active. '''
+    )
+
+    parser.add_argument(
+        '--initial_tau', '-t',
+        type=float,
+        default=10.0,
+        help=''' The initial temperature vaule for the PD model. '''
+    )
+
+    parser.add_argument(
+        '--pre_train', '-p',
+        type=str2bool,
+        default='true',
+        help=''' Whether the model should be pre trained or not. '''
     )
 
     FLAGS, unparsed = parser.parse_known_args()

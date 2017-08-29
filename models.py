@@ -10,7 +10,7 @@ from utils import *
 
 class Bernoulli_Net(Model):
     """ Creates a deep learning model. """
-    def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, meta=None):
+    def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, second_conv=False, meta=None):
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size, num_samples)
 
@@ -27,7 +27,7 @@ class Bernoulli_Net(Model):
                           filters=self.num_filters,
                           kernel_size=[5, 5],
                           padding="same",
-                          strides=(5, 5),
+                          strides=(3, 3),
                           name='conv1',
                           activation=tf.nn.relu)
                         #   kernel_regularizer=l2_regularizer,
@@ -75,12 +75,33 @@ class Bernoulli_Net(Model):
 
         # Multiply the features by the gates defined by attention
         features = tf.reshape(tf.tile(tf.reshape(features, [-1]), [dynamic_num_samples]), [-1, self.num_features, self.num_filters])
+        self.attention = tf.cond(tf.greater(self.phase, 0), lambda: self.attention, lambda: tf.round(self.attention))
         zoom_X = tf.multiply(features, tf.reshape(self.attention, [-1, self.num_features, 1]), name='Zoom_X')
-        flat_zoom_X = tf.reshape(zoom_X, [-1, self.num_features*self.num_filters])
+
+        if second_conv:
+            # Multiply the features by the gates defined by attention
+            zoom_X = tf.layers.conv2d(
+                        inputs= tf.reshape(zoom_X, [-1, 20, 20, self.num_filters]),
+                        filters=self.num_filters*2,
+                        kernel_size=[5, 5],
+                        padding="same",
+                        strides=(1, 1),
+                        name="conv2",
+                        activation=tf.nn.relu)
+                        # kernel_regularizer=l2_regularizer,
+                        # bias_regularizer=l2_regularizer)
+
+            conv_vars2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "conv2")
+            zoom_size = self.num_features*self.num_filters*2
+        else:
+            conv_vars2 = []
+            zoom_size = self.num_features*self.num_filters
+
+        flat_zoom_X = tf.reshape(zoom_X, [-1, zoom_size])
 
         self.logits, self.predictions, class_reg_loss = self.build_net(
             input=flat_zoom_X,
-            layer_sizes=[self.num_features*self.num_filters] + layer_sizes + [self.num_classes],
+            layer_sizes=[zoom_size] + layer_sizes + [self.num_classes],
             nonlinearity=tf.nn.relu,
             scope='dnn',
             phase=self.phase)
@@ -109,13 +130,13 @@ class Bernoulli_Net(Model):
 
         self.pre_train_step = tf.contrib.layers.optimize_loss(
                 cost_mean, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
-                summaries=["gradients"], variables=[classifier_vars, conv_vars], name='PRE_TRAIN')
+                summaries=["gradients"], variables=[classifier_vars, conv_vars, conv_vars2], name='PRE_TRAIN')
 
         # Define the train step
         self.train_step = [
             tf.contrib.layers.optimize_loss(
                 self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
-                summaries=["gradients"], variables=classifier_vars, name='CLASSIFIER'),
+                summaries=["gradients"], variables=[classifier_vars, conv_vars2], name='CLASSIFIER'),
 
             tf.contrib.layers.optimize_loss(
                 self.policy_loss + self.reg_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
@@ -140,7 +161,7 @@ class Bernoulli_Net(Model):
                     reduction=Reduction.NONE)
 
         self.feedback_train_step = tf.contrib.layers.optimize_loss(
-            tf.reduce_mean(feedback_cost) + self.policy_loss + self.reg_loss, global_step=self.global_step, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
+            tf.reduce_mean(feedback_cost) + self.policy_loss + self.reg_loss, global_step=self.global_step, learning_rate=0.1*self.learning_rate, optimizer=optimizer,
             summaries=["gradients"], variables=[policy_vars], name='FEEDBACK_TRAIN')
 
         tf.assign(past_cost, past_cost*0.9 + 0.1*tf.reduce_mean(cost))
@@ -326,7 +347,7 @@ class Cat_Net(Model):
 
 class Gumbel_Net(Model):
     """ Creates a deep learning model. """
-    def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, num_cat, learning_rate, feedback_distance, directory, meta=None):
+    def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, num_cat, learning_rate, feedback_distance, directory, second_conv=False, initial_tau=10.0, meta=None):
 
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size)
@@ -366,7 +387,7 @@ class Gumbel_Net(Model):
             policy_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "attention")
 
             # temperature
-            tau_decay = tf.train.exponential_decay(learning_rate=10.0,
+            tau_decay = tf.train.exponential_decay(learning_rate=initial_tau,
                                              global_step=self.global_step,
                                              decay_steps=100,
                                              decay_rate=0.96,
@@ -403,11 +424,30 @@ class Gumbel_Net(Model):
             Lv_summary = tf.summary.scalar('Lvb', Lvb)
 
             zoom_X = tf.multiply(features, tf.reshape(attention, [-1, self.num_features, 1]), name='Zoom_X')
-            flat_zoom_X = tf.reshape(zoom_X, [-1, self.num_features*self.num_filters])
 
+            if second_conv:
+                # Multiply the features by the gates defined by attention
+                zoom_X = tf.layers.conv2d(
+                            inputs= tf.reshape(zoom_X, [-1, 20, 20, self.num_filters]),
+                            filters=self.num_filters*2,
+                            kernel_size=[5, 5],
+                            padding="same",
+                            strides=(1, 1),
+                            name="conv2",
+                            activation=tf.nn.relu)
+                            # kernel_regularizer=l2_regularizer,
+                            # bias_regularizer=l2_regularizer)
+
+                conv_vars2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "conv2")
+                zoom_size = self.num_features*self.num_filters*2
+            else:
+                conv_vars2 = []
+                zoom_size = self.num_features*self.num_filters
+
+            flat_zoom_X = tf.reshape(zoom_X, [-1, zoom_size])
             self.logits, self.predictions, class_reg_loss = self.build_net(
                 input=flat_zoom_X,
-                layer_sizes=[self.num_features*self.num_filters] + layer_sizes + [self.num_classes],
+                layer_sizes=[zoom_size] + layer_sizes + [self.num_classes],
                 nonlinearity=tf.nn.relu,
                 scope='dnn',
                 phase=self.phase)
@@ -427,7 +467,7 @@ class Gumbel_Net(Model):
 
             self.pre_train_step = tf.contrib.layers.optimize_loss(
                     cost_mean, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
-                    summaries=["gradients"], variables=[classifier_vars, conv_vars], name='PRE_TRAIN')
+                    summaries=["gradients"], variables=[classifier_vars, conv_vars, conv_vars2], name='PRE_TRAIN')
 
             self.train_step = tf.contrib.layers.optimize_loss(
                                 self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
@@ -452,7 +492,7 @@ class Gumbel_Net(Model):
 
             self.feedback_train_step = tf.contrib.layers.optimize_loss(
                                 tf.reduce_mean(feedback_cost) + cost_mean + self.reg_loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
-                                summaries=["gradients"], variables=policy_vars)
+                                summaries=["gradients"])
 
             self.add_logging()  # Monitor loss, accuracy and auc
             # Initialize all the local variables (used to calculate auc & accuracy)
