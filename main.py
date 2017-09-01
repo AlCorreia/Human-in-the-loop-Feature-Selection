@@ -6,7 +6,7 @@ import sys
 import tensorflow as tf
 from tqdm import tqdm
 
-from models import Bernoulli_Net, Cat_Net, Gumbel_Net
+from models import Bernoulli_Net, Cat_Net, Gumbel_Net, Raw_Bernoulli_Net, Raw_Gumbel_Net
 from utils import *
 
 
@@ -30,16 +30,26 @@ def main(_):
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
+        kernlen = 30
         net = Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
-        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau)
+        num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau, tau_decay=FLAGS.tau_decay, reg=FLAGS.reg)
+    elif FLAGS.model == 'RawG':
+        kernlen = 60
+        net = Raw_Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
+        num_features=FLAGS.frame_size**2, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau, meta=None)
     elif FLAGS.model == 'RL':
+        kernlen = 30
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv)
+    elif FLAGS.model == 'RawB':
+        kernlen = 60
+        net = Raw_Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
+        num_features=FLAGS.frame_size**2, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv)
 
     X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
     y_train = mnist.train.labels
 
-    train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
+    train_coords = np.array([gkern(coord[0], coord[1], kernlen=kernlen) for coord in train_coords])
 
     X_test, test_coords = convertCluttered(mnist.test.images, finalImgSize=FLAGS.frame_size)
     # test_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in test_coords])
@@ -53,7 +63,6 @@ def main(_):
             net.evaluate(_x, _y, pre_trainining=True)
             X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
             y_train = mnist.train.labels
-            train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
             # print(net.confusion_matrix(_x, _y))
             net.save()
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
@@ -68,21 +77,20 @@ def main(_):
         net.evaluate(_x, _y)
         X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
         y_train = mnist.train.labels
-        train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
         # print(net.confusion_matrix(_x, _y))
         net.save()
         for i in range(0, len(X_train), batch_size):
-            _x, _y, _train_coords = X_train[i:i+batch_size], y_train[i:i+batch_size], train_coords[i:i+batch_size]
+            _x, _y = X_train[i:i+batch_size], y_train[i:i+batch_size]
             net.train(_x, _y, dropout=FLAGS.dropout)
 
-    if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat':
+    if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat' or FLAGS.model == 'Raw':
         print("Feedback Training")
         for epoch in tqdm(range(FLAGS.epochs)):
             _x, _y = input_fn(X_test, y_test, batch_size=batch_size)
             net.evaluate(_x, _y)
             X_train, train_coords = convertCluttered(mnist.train.images, finalImgSize=FLAGS.frame_size)
             y_train = mnist.train.labels
-            train_coords = np.array([gkern(coord[0], coord[1], kernlen=20) for coord in train_coords])
+            train_coords = np.array([gkern(coord[0], coord[1], kernlen=kernlen) for coord in train_coords])
             # print(net.confusion_matrix(_x, _y))
             net.save()
             X_train, y_train, train_coords = shuffle_in_unison(X_train, y_train, train_coords)
@@ -186,21 +194,21 @@ if __name__ == '__main__':
     parser.add_argument(
         '--arch', '-A',
         type=str,
-        default='128,32',
+        default='256',
         help=''' The number of neurons in each layer of the neural net classifier. '''
     )
 
     parser.add_argument(
         '--num_filters', '-fi',
         type=int,
-        default=16,
+        default=8,
         help=''' The number of filters in the conv net. '''
     )
 
     parser.add_argument(
         '--num_features', '-fe',
         type=int,
-        default=400,
+        default=900,
         help=''' The number of features used by the agent. '''
     )
 
@@ -251,6 +259,20 @@ if __name__ == '__main__':
         type=float,
         default=10.0,
         help=''' The initial temperature vaule for the PD model. '''
+    )
+
+    parser.add_argument(
+        '--tau_decay', '-td',
+        type=str2bool,
+        default='true',
+        help=''' Whether to decay tau or keep it constant. '''
+    )
+
+    parser.add_argument(
+        '--reg', '-r',
+        type=float,
+        default=1.0,
+        help=''' Trade-off between classification and regularization cost. '''
     )
 
     parser.add_argument(

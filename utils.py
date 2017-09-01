@@ -78,7 +78,7 @@ def convertTranslated(images, finalImgSize, initImgSize=28, batch_size=None):
     return newimages, imgCoord
 
 
-def convertCluttered(original_images, finalImgSize, initImgSize=28, number_patches=3, clutter_size=8, batch_size=None):
+def convertCluttered(original_images, finalImgSize, initImgSize=28, number_patches=4, clutter_size=8, batch_size=None):
     images, imgCoord = convertTranslated(original_images, batch_size=batch_size, initImgSize=initImgSize, finalImgSize=finalImgSize)
     if batch_size is None:
         batch_size = len(images)
