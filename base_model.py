@@ -222,28 +222,28 @@ class Model(object):
         correct_prediction = tf.equal(tf.argmax(label, axis=1), tf.argmax(self.predictions, axis=1))
         self.accuracy = tf.reduce_mean(
             tf.cast(correct_prediction, tf.float32))
-        # Calculate the confusion matrix
-        confusion = tf.confusion_matrix(labels=tf.argmax(label, axis=1), predictions=tf.argmax(self.predictions, axis=1))
-        confusion = tf.cast(confusion, dtype=tf.float32)
-        # Calculate the kappa accuracy
-        sum0 = tf.reduce_sum(confusion, axis=0)
-        sum1 = tf.reduce_sum(confusion, axis=1)
-        expected_accuracy = tf.reduce_sum(tf.multiply(sum0, sum1)) / (tf.square(tf.reduce_sum(sum0)))
-        expected_accuracy_summary = tf.summary.scalar('expected_accuracy', expected_accuracy)
-        w_mat = np.zeros([self.num_classes, self.num_classes], dtype=np.int)
-        w_mat += np.arange(self.num_classes)
-        w_mat = np.abs(w_mat - w_mat.T)
-        k = (self.accuracy - expected_accuracy) / (1 - expected_accuracy)
-        # Calculate the precision
-        _, precision = tf.metrics.precision(
-                                    labels=label,
-                                    predictions=self.predictions)
+        # # Calculate the confusion matrix
+        # confusion = tf.confusion_matrix(labels=tf.argmax(label, axis=1), predictions=tf.argmax(self.predictions, axis=1))
+        # confusion = tf.cast(confusion, dtype=tf.float32)
+        # # Calculate the kappa accuracy
+        # sum0 = tf.reduce_sum(confusion, axis=0)
+        # sum1 = tf.reduce_sum(confusion, axis=1)
+        # expected_accuracy = tf.reduce_sum(tf.multiply(sum0, sum1)) / (tf.square(tf.reduce_sum(sum0)))
+        # expected_accuracy_summary = tf.summary.scalar('expected_accuracy', expected_accuracy)
+        # w_mat = np.zeros([self.num_classes, self.num_classes], dtype=np.int)
+        # w_mat += np.arange(self.num_classes)
+        # w_mat = np.abs(w_mat - w_mat.T)
+        # k = (self.accuracy - expected_accuracy) / (1 - expected_accuracy)
+        # # Calculate the precision
+        # _, precision = tf.metrics.precision(
+        #                             labels=label,
+        #                             predictions=self.predictions)
         # Add the summaries
         accuracy_summary = tf.summary.scalar('accuracy', self.accuracy)
-        kappa_accuracy = tf.summary.scalar('kappa', k)
-        precision_summary = tf.summary.scalar('precision', precision)
+        # kappa_accuracy = tf.summary.scalar('kappa', k)
+        # precision_summary = tf.summary.scalar('precision', precision)
         loss_summary = tf.summary.scalar('loss', self.loss)
-        learning_rate_summary = tf.summary.scalar('learning_rate', self.learning_rate)
+        # learning_rate_summary = tf.summary.scalar('learning_rate', self.learning_rate)
 
         # Combine all the summaries
         self.merged = tf.summary.merge_all()

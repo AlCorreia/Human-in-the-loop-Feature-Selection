@@ -6,7 +6,7 @@ import sys
 import tensorflow as tf
 from tqdm import tqdm
 
-from models import Bernoulli_Net, Cat_Net, Gumbel_Net, Raw_Bernoulli_Net, Raw_Gumbel_Net
+from models import Baseline, Bernoulli_Net, Cat_Net, Gumbel_Net, Raw_Bernoulli_Net, Raw_Gumbel_Net
 from utils import *
 
 
@@ -22,26 +22,29 @@ def str2bool(v):
 def main(_):
     mnist = load_mnist()
     pre_training = FLAGS.pre_train
-    if FLAGS.model == 'Conv':
+    if FLAGS.model == 'Base':
         pre_training = False
-        net = Simple_Conv_Net(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch,
-            num_cat=FLAGS.num_cat)
+        kernlen = int(FLAGS.frame_size/2)
+        net = Baseline(directory=FLAGS.dir, optimizer=FLAGS.optimizer, learning_rate=FLAGS.learning_rate, layer_sizes=FLAGS.arch, num_features=FLAGS.num_features, num_filters=FLAGS.num_filters, frame_size=FLAGS.frame_size)
     if FLAGS.model == 'Cat':
+        kernlen = int(FLAGS.frame_size/2)
         net = Cat_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir)
     elif FLAGS.model == 'Gumbel':
-        kernlen = 30
+        kernlen = int(FLAGS.frame_size/2)
         net = Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau, tau_decay=FLAGS.tau_decay, reg=FLAGS.reg)
     elif FLAGS.model == 'RawG':
+        pre_training = False
         kernlen = 60
         net = Raw_Gumbel_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.frame_size**2, frame_size=FLAGS.frame_size, num_cat=FLAGS.num_cat, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv, initial_tau=FLAGS.initial_tau, meta=None)
     elif FLAGS.model == 'RL':
-        kernlen = 30
+        kernlen = int(FLAGS.frame_size/2)
         net = Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.num_features, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv)
     elif FLAGS.model == 'RawB':
+        pre_training = True
         kernlen = 60
         net = Raw_Bernoulli_Net(layer_sizes=FLAGS.arch, optimizer=FLAGS.optimizer, num_filters=FLAGS.num_filters,
         num_features=FLAGS.frame_size**2, num_samples=FLAGS.num_samples, frame_size=FLAGS.frame_size, learning_rate=FLAGS.learning_rate, feedback_distance=FLAGS.feedback_distance, directory=FLAGS.dir, second_conv=FLAGS.second_conv)
@@ -83,7 +86,7 @@ def main(_):
             _x, _y = X_train[i:i+batch_size], y_train[i:i+batch_size]
             net.train(_x, _y, dropout=FLAGS.dropout)
 
-    if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat' or FLAGS.model == 'Raw':
+    if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat' or FLAGS.model == 'RawB' or FLAGS.model == 'RawG':
         print("Feedback Training")
         for epoch in tqdm(range(FLAGS.epochs)):
             _x, _y = input_fn(X_test, y_test, batch_size=batch_size)

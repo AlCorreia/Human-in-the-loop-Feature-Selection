@@ -8,6 +8,148 @@ from base_model import Model
 from utils import *
 
 
+class Baseline(Model):
+    """ Creates a deep learning model. """
+    def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, learning_rate, directory, second_conv=False, meta=None):
+        # Initialize the Model object
+        self.directory = directory
+        # Create a tensorflow session for the model
+        self.sess = tf.Session()
+        # Define the learning rate for the neural net
+        self.global_step = tf.Variable(0, trainable=False)
+        self.learning_rate = learning_rate
+        self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
+
+        self.num_filters = num_filters
+        self.num_features = num_features
+        self.num_classes = 10
+        self.frame_size = frame_size
+        # Define placeholder for the inputs X and the labels y
+        self.label = tf.placeholder(tf.float32, shape=[None, self.num_classes], name='y')
+        self.X = tf.placeholder(tf.float32, shape=[None, self.frame_size**2], name="X")
+        # Create a placeholder that defines the phase: training or testing
+        self.phase = tf.placeholder(tf.int32, name='phase')
+
+
+        if meta is not None:
+            # Load pre-trained model
+            self.saver = tf.train.import_meta_graph(directory + '/' + meta)
+            self.saver.restore(self.sess, tf.train.latest_checkpoint(directory))
+            graph = tf.get_default_graph()
+            conv = graph.get_tensor_by_name("conv1:0")
+        else:
+            conv = tf.layers.conv2d(
+                inputs= tf.reshape(self.X, [-1, frame_size, frame_size, 1]),
+                filters=self.num_filters,
+                kernel_size=[4, 4],
+                padding="same",
+                strides=(2, 2),
+                name='conv1',
+                activation=tf.nn.relu)
+
+            conv_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "conv1")
+
+            self.logits, self.predictions, class_reg_loss = self.build_net(
+                input=tf.reshape(conv, [-1, self.num_features*self.num_filters]),
+                layer_sizes=[self.num_features*self.num_filters] + layer_sizes + [self.num_classes],
+                nonlinearity=tf.nn.relu,
+                scope='dnn',
+                phase=self.phase)
+
+            classifier_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dnn")
+
+            # Define the loss function
+            cost = tf.nn.softmax_cross_entropy_with_logits(
+                    logits=self.logits,
+                    labels=self.label,
+                    name='loss_function')
+
+            cost_mean = tf.reduce_mean(cost)
+            cost_summary = tf.summary.scalar('cost', tf.reduce_mean(cost))
+
+            # Define the loss function for the classifier
+            self.loss = cost_mean
+
+            # Define the train step
+            self.train_step = tf.contrib.layers.optimize_loss(
+                    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
+                    summaries=["gradients"], name='CLASSIFIER')
+
+            self.add_logging()  # Monitor loss, accuracy and auc
+            # Initialize all the local variables (used to calculate auc & accuracy)
+            local_init = tf.local_variables_initializer()
+            self.sess.run(local_init)
+            init = tf.global_variables_initializer()
+            self.sess.run(init)
+            # Add ops to save and restore all the variables.
+            self.saver = tf.train.Saver()
+
+
+    def train(self, X, y, dropout=0.5):
+        """ Runs a train step given the input X and the correct label y.
+
+            Parameters
+            ----------
+            X : numpy array [batch_size, num_raw_features]
+            y : numpy array [batch_size, num_classes]
+            dropout: float in [0, 1]
+                The probability of keeping the neurons active
+
+        """
+        # Combine the input dictionaries for all the features models
+        feed_dict = {}
+        feed_dict['phase:0'] = 1
+        feed_dict['X:0'] = X
+        feed_dict['y:0'] = y
+        feed_dict['dropout:0'] = dropout
+
+        # Run the training step and write the results to Tensorboard
+        summary, _ = self.sess.run([self.merged, self.train_step],
+                                   feed_dict=feed_dict)
+        self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
+
+        # Regularly save the models parameters
+        if self.sess.run(self.global_step) % 1000 == 0:
+            self.saver.save(self.sess, self.directory + '/model.ckpt')
+
+    def evaluate(self, X, y, pre_trainining=False):
+        """ Evaluates X and compares to the correct label y.
+
+            Parameters
+            ----------
+            X : numpy array [batch_size, num_raw_features]
+            y : numpy array [batch_size, num_classes]
+            pre_trainining: boolean
+
+        """
+        # Combine the input dictionaries for all the features models
+        feed_dict = {}
+        feed_dict['X:0'] = X
+        feed_dict['y:0'] = y
+        feed_dict['phase:0'] = 0
+        # Run the evaluation and write the results to Tensorboard
+        summary = self.sess.run(self.merged,
+                                feed_dict=feed_dict)
+        self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
+
+    def add_logging(self, config=None):
+        """ Creates summaries for accuracy, auc and loss. """
+
+        # Calculate the accuracy for multiclass classification
+        correct_prediction = tf.equal(tf.argmax(self.label, axis=1), tf.argmax(self.predictions, axis=1))
+        self.accuracy = tf.reduce_mean(
+            tf.cast(correct_prediction, tf.float32))
+        # Add the summaries
+        accuracy_summary = tf.summary.scalar('accuracy', self.accuracy)
+        loss_summary = tf.summary.scalar('loss', self.loss)
+        # Combine all the summaries
+        self.merged = tf.summary.merge_all()
+        # Create summary writers for train and test set
+        self.train_writer = tf.summary.FileWriter(self.directory + '/train',
+                                                  self.sess.graph)
+        self.test_writer = tf.summary.FileWriter(self.directory + '/test')
+
+
 class Bernoulli_Net(Model):
     """ Creates a deep learning model. """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, second_conv=False, reg=1.0, meta=None):
@@ -22,7 +164,7 @@ class Bernoulli_Net(Model):
             conv = graph.get_tensor_by_name("conv1:0")
         else:
             conv = tf.layers.conv2d(
-                inputs= tf.reshape(self.X, [-1, 60, 60, 1]),
+                inputs= tf.reshape(self.X, [-1, frame_size, frame_size, 1]),
                 filters=self.num_filters,
                 kernel_size=[4, 4],
                 padding="same",
@@ -171,9 +313,9 @@ class Bernoulli_Net(Model):
             self.saver = tf.train.Saver()
 
             input_images = tf.summary.image("Visualize_Input", tf.reshape(self.X, [10, frame_size, frame_size, 1]), max_outputs=10)
-            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(self.probs, [10, 30, 30, 1]), max_outputs=10)
-            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, 30, 30, 1]), max_outputs=10)
-            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, 30, 30, 1]), max_outputs=10)
+            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(self.probs, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
 
             self.merged_images = tf.summary.merge([input_images, prob_images, attention_images, feedback_images])
 
@@ -264,19 +406,35 @@ class Raw_Bernoulli_Net(Model):
                     logits=self.logits,
                     labels=self.label,
                     name='loss_function')
+
+            past_cost = tf.Variable(tf.zeros([]), name='past_cost')
+
             cost_mean = tf.reduce_mean(cost)
+            cost_summary = tf.summary.scalar('cost', tf.reduce_mean(cost))
+
+            log_probability = tf.log(sample_probs + 10e-20)
+            log_probability = tf.verify_tensor_all_finite(log_probability, "Undefined log probability")
+            log_probability = tf.reduce_sum(log_probability, axis=1)
 
             # Define the loss function for the classifier
-            self.reg_loss = (Le + Lb) - (Lve + Lvb)
-            self.loss = cost_mean + reg*self.reg_loss
+            self.loss = cost_mean
+            self.policy_loss = tf.reduce_mean(tf.multiply((cost-past_cost), log_probability))
+            self.reg_loss = 10*(Le + Lb) - (Lve + Lvb)
 
             self.pre_train_step = tf.contrib.layers.optimize_loss(
                     cost_mean, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
                     summaries=["gradients"], variables=[classifier_vars, conv_vars], name='PRE_TRAIN')
 
-            self.train_step = tf.contrib.layers.optimize_loss(
-                                self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
-                                summaries=["gradients"], name='TRAIN')
+            # Define the train step
+            self.train_step = [
+                tf.contrib.layers.optimize_loss(
+                    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
+                    summaries=["gradients"], variables=[classifier_vars, conv_vars], name='CLASSIFIER'),
+
+                tf.contrib.layers.optimize_loss(
+                    self.policy_loss + reg*self.reg_loss, global_step=self.global_step, increment_global_step=False, learning_rate=0.05*self.learning_rate, optimizer=optimizer,
+                    summaries=["gradients"], variables=policy_vars, name='REINFORCE')
+            ]
 
             if feedback_distance == 'cosine':
                 feedback_cost = tf.losses.cosine_distance(
@@ -298,6 +456,8 @@ class Raw_Bernoulli_Net(Model):
             self.feedback_train_step = tf.contrib.layers.optimize_loss(
                                 tf.reduce_mean(feedback_cost) + cost_mean + self.reg_loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=optimizer,
                                 summaries=["gradients"])
+
+            tf.assign(past_cost, past_cost*0.9 + 0.1*tf.reduce_mean(cost))
 
             self.add_logging()  # Monitor loss, accuracy and auc
             # Initialize all the local variables (used to calculate auc & accuracy)
@@ -471,9 +631,9 @@ class Cat_Net(Model):
             self.saver = tf.train.Saver()
 
             input_images = tf.summary.image("Visualize_Input", tf.reshape(self.X, [10, frame_size, frame_size, 1]), max_outputs=10)
-            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(weighthed_probs, [10, 30, 30, 1]), max_outputs=10)
-            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, 30, 30, 1]), max_outputs=10)
-            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, 30, 30, 1]), max_outputs=10)
+            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(weighthed_probs, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
 
             self.merged_images = tf.summary.merge([input_images, prob_images, attention_images, feedback_images])
 
@@ -497,7 +657,7 @@ class Gumbel_Net(Model):
         else:
 
             conv = tf.layers.conv2d(
-                inputs= tf.reshape(self.X, [-1, 60, 60, 1]),
+                inputs= tf.reshape(self.X, [-1, frame_size, frame_size, 1]),
                 filters=self.num_filters,
                 kernel_size=[4, 4],
                 padding="same",
@@ -640,9 +800,9 @@ class Gumbel_Net(Model):
             self.saver = tf.train.Saver()
 
             input_images = tf.summary.image("Visualize_Input", tf.reshape(self.X, [10, frame_size, frame_size, 1]), max_outputs=10)
-            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(attention, [10, 30, 30, 1]), max_outputs=10)
-            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, 30, 30, 1]), max_outputs=10)
-            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, 30, 30, 1]), max_outputs=10)
+            prob_images = tf.summary.image("Probability_Distribution", tf.reshape(attention, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            feedback_images = tf.summary.image("Feedback_Images", tf.reshape(self.feedback, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
+            attention_images = tf.summary.image("Attention_Images", tf.reshape(self.attention, [10, int(frame_size/2), int(frame_size/2), 1]), max_outputs=10)
 
             self.merged_images = tf.summary.merge([input_images, prob_images, attention_images, feedback_images])
 
@@ -739,7 +899,7 @@ class Raw_Gumbel_Net(Model):
             features = tf.reshape(conv, [-1, self.num_features, self.num_filters])
             flat_features = tf.reshape(conv, [-1, self.num_features*self.num_filters])
 
-            zoom_size = 144*self.num_filters
+            zoom_size = 900*self.num_filters
             flat_conv = tf.reshape(conv, [-1, zoom_size])
 
             self.logits, self.predictions, class_reg_loss = self.build_net(
