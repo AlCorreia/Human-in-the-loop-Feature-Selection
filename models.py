@@ -9,7 +9,7 @@ from utils import *
 
 
 class Baseline(Model):
-    """ Creates a deep learning model. """
+    """ Creates a deep learning model with a single convolutional layer. """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, learning_rate, directory, second_conv=False, meta=None):
         # Initialize the Model object
         self.directory = directory
@@ -151,7 +151,9 @@ class Baseline(Model):
 
 
 class Bernoulli_Net(Model):
-    """ Creates a deep learning model. """
+    """ Creates a SF estimator model with a Bernoulli distribution.
+        Feature selection is applied on the features extracted by the conv layer.
+    """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, second_conv=False, reg=1.0, meta=None):
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size, num_samples)
@@ -321,7 +323,9 @@ class Bernoulli_Net(Model):
 
 
 class Raw_Bernoulli_Net(Model):
-    """ Creates a deep learning model. """
+    """ Creates a SF estimator model with Bernoulli distribution.
+        Feature selection is applied on the raw features.
+    """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, learning_rate, feedback_distance, directory, second_conv=False, reg=1.0, meta=None):
 
         # Initialize the Model object
@@ -477,7 +481,9 @@ class Raw_Bernoulli_Net(Model):
 
 
 class Cat_Net(Model):
-    """ Creates a deep learning model. """
+    """ Creates a SF estimator model with categorical distribution.
+        Feature selection is applied on the features extracted by the conv layer.
+    """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, num_samples, frame_size, num_cat, learning_rate, feedback_distance, directory, reg=1.0, meta=None):
         # Initialize the Model object
         super().__init__(directory, learning_rate, num_filters, num_features, frame_size, num_samples)
@@ -639,7 +645,9 @@ class Cat_Net(Model):
 
 
 class Gumbel_Net(Model):
-    """ Creates a deep learning model. """
+    """ Creates a PD estimator with Gumbel-softmax.
+        Feature selection is applied on the features extracted by the conv layer.
+    """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, num_cat, learning_rate, feedback_distance, directory, second_conv=False, initial_tau=10.0, tau_decay=True, reg=1.0, meta=None):
 
         # Initialize the Model object
@@ -819,7 +827,9 @@ class Gumbel_Net(Model):
 
 
 class Raw_Gumbel_Net(Model):
-    """ Creates a deep learning model. """
+    """ Creates a PD estimator with Gumbel-softmax.
+        Feature selection is applied on the raw features.
+    """
     def __init__(self, layer_sizes, optimizer, num_filters, num_features, frame_size, num_cat, learning_rate, feedback_distance, directory, second_conv=False, initial_tau=10.0, reg=1.0, meta=None):
 
         # Initialize the Model object
@@ -968,6 +978,8 @@ class Raw_Gumbel_Net(Model):
             self.merged_images = tf.summary.merge([input_images, prob_images, attention_images, feedback_images])
 
     class Distribution:
+        """ Creates a Gumbel-softmax distribution.
+            This class is only used to plot the mask a during training and testing. """
         def __init__(self, probs_logits, num_features, num_cat, tau):
             self.probs_logits = probs_logits
             self.num_features = num_features

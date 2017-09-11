@@ -59,6 +59,26 @@ def shuffle_in_unison(a, b, c=None):
 
 
 def convertTranslated(images, finalImgSize, initImgSize=28, batch_size=None):
+    """ Returns translated MNIST images.
+
+        Parameters
+        ----------
+        images : numpy 2D-array
+            The set of images to be converted.
+        finalImgSize : int
+            The larger frame where the digit is positioned.
+        initImgSize : int
+            The size of the original image (28 for MNIST).
+        batch_size: int
+
+        Returns
+        ----------
+        cluttered_images : numpy 2D-array
+            The augmented images with clutter
+        imgCoord : numpy array
+            The coordinates of the center of the digit in the new images
+    """
+
     if batch_size is None:
         batch_size = len(images)
     size_diff = finalImgSize - initImgSize
@@ -79,6 +99,30 @@ def convertTranslated(images, finalImgSize, initImgSize=28, batch_size=None):
 
 
 def convertCluttered(original_images, finalImgSize, initImgSize=28, number_patches=4, clutter_size=8, batch_size=None):
+    """ Returns cluttered MNIST images.
+
+        Parameters
+        ----------
+        original_images : numpy 2D-array
+            The set of images to be converted.
+        finalImgSize : int
+            The larger frame where the digit is positioned.
+        initImgSize : int
+            The size of the original image (28 for MNIST).
+        number_patches: int
+            The number of patches from other images added
+        clutter_size: int
+            The size of the noise patches
+        batch_size: int
+
+        Returns
+        ----------
+        cluttered_images : numpy 2D-array
+            The augmented images with clutter
+        imgCoord : numpy array
+            The coordinates of the center of the digit in the new images
+    """
+
     images, imgCoord = convertTranslated(original_images, batch_size=batch_size, initImgSize=initImgSize, finalImgSize=finalImgSize)
     if batch_size is None:
         batch_size = len(images)
@@ -124,7 +168,7 @@ def gkern(mx, my, kernlen):
 
 
 def sample_gumbel(shape, eps=1e-20):
-  """Sample from Gumbel(0, 1)"""
+  """ Sample from Gumbel(0, 1) """
   U = tf.random_uniform(shape, minval=0, maxval=1)
   return -tf.log(-tf.log(U + eps) + eps)
 
@@ -136,7 +180,7 @@ def gumbel_softmax_sample(logits, temperature):
 
 
 def gumbel_softmax(logits, temperature, hard=False):
-  """Sample from the Gumbel-Softmax distribution and optionally discretize.
+  """ Sample from the Gumbel-Softmax distribution and optionally discretize.
   Args:
     logits: [batch_size, n_class] unnormalized log-probs
     temperature: non-negative scalar
