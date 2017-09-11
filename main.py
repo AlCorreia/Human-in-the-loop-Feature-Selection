@@ -11,7 +11,7 @@ from utils import *
 
 
 def str2bool(v):
-    """ Converts a string to a boolean value. """"
+    """ Converts a string to a boolean value. """
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
     elif v.lower() in ('no', 'false', 'f', 'n', '0'):
