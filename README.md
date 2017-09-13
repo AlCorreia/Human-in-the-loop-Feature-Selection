@@ -1,6 +1,5 @@
-# Human-in-the-Loop Feature Selection
-
-A tensorflow implementation of a human-in-the-loop feature selection architecture for image classification.
+# HILAM
+A tensorflow implementation of a feature selection architecture for image classification.
 
 ## Requirements
  
