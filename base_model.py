@@ -9,8 +9,9 @@ from sklearn.metrics import cohen_kappa_score
 
 class Model(object):
     """ General model class. """
-    def __init__(self, directory, learning_rate, num_filters, num_features, frame_size, num_samples=1):
-        """ Initializes the model and creates a neww seesion.
+    def __init__(self, num_features, layer_sizes, num_classes, optimizer,
+                 learning_rate, directory, meta=None, num_samples=1):
+        """ Initializes the model and creates a new seesion.
 
             Parameters
             ----------
@@ -33,17 +34,18 @@ class Model(object):
         self.learning_rate = learning_rate
         self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
 
-        self.num_filters = num_filters
         self.num_features = num_features
-        self.num_classes = 10
-        self.frame_size = frame_size
+        self.num_classes = num_classes
         self.num_samples = num_samples
         # Define placeholder for the inputs X, the labels y and the users feedback
         self.label = tf.placeholder(tf.float32, shape=[None, self.num_classes], name='y')
-        self.X = tf.placeholder(tf.float32, shape=[None, self.frame_size**2], name="X")
+        self.X = tf.placeholder(tf.float32, shape=[None, self.num_features], name="X")
         self.attention = tf.placeholder(tf.float32, shape=[None, self.num_features], name="a")
         self.feedback = tf.placeholder(tf.float32, shape=[None, self.num_features], name="feedback")
         # Create a placeholder that defines the phase: training or testing
+        # test: 0
+        # train: 1
+        # pre-train: 2
         self.phase = tf.placeholder(tf.int32, name='phase')
 
     def explain(self, X):
@@ -79,10 +81,6 @@ class Model(object):
         summary, _ = self.sess.run([self.merged, self.pre_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
-        # Run image summary and write the results to Tensorboard
-        summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: np.ones([10, self.num_features]), self.phase: 2})
-        self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
@@ -112,11 +110,7 @@ class Model(object):
         summary, _ = self.sess.run([self.merged, self.train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
-        # Run image summary and write the results to Tensorboard
-        summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10],
-                                           self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10], self.phase: 1})
-        self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
+
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
@@ -147,10 +141,7 @@ class Model(object):
         summary, _ = self.sess.run([self.merged, self.feedback_train_step],
                                    feed_dict=feed_dict)
         self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
-        # Run image summary and write the results to Tensorboard
-        summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: feedback[0:10], self.attention: attention[0:10], self.phase: 1})
-        self.train_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
+
         # Regularly save the models parameters
         if self.sess.run(self.global_step) % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
@@ -182,10 +173,6 @@ class Model(object):
         # Run the evaluation and write the results to Tensorboard
         summary = self.sess.run(self.merged,
                                 feed_dict=feed_dict)
-        self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
-        # Run image summary and write the results to Tensorboard
-        summary = self.sess.run(self.merged_images,
-                                feed_dict={self.X: X[0:10], self.feedback: np.ones([10, self.num_features]), self.attention: attention[0:10], self.phase: phase})
         self.test_writer.add_summary(summary, global_step=self.sess.run(self.global_step))
 
     def predict(self, X):
