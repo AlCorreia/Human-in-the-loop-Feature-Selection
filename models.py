@@ -10,8 +10,8 @@ from utils import *
 
 class Baseline(Model):
     """ Creates a deep learning model with a single fully-connected layer. """
-    def __init__(self, num_features, layer_sizes, num_classes, optimizer,
-                 learning_rate, directory, meta=None):
+    def __init__(self, num_features, layer_sizes, output_size, optimizer,
+                 learning_rate, directory, target='regres', meta=None):
         # Initialize the Model object
         self.directory = directory
         # Create a tensorflow session for the model
@@ -22,9 +22,8 @@ class Baseline(Model):
         self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
 
         self.num_features = num_features
-        self.num_classes = num_classes
-        # Define placeholder for the inputs X and the labels y
-        self.label = tf.placeholder(tf.float32, shape=[None, self.num_classes], name='y')
+        self.output_size = output_size
+        # Define placeholder for the inputs X
         self.X = tf.placeholder(tf.float32, shape=[None, self.num_features], name="X")
         # Create a placeholder that defines the phase: training or testing
         self.phase = tf.placeholder(tf.int32, name='phase')
@@ -37,18 +36,29 @@ class Baseline(Model):
         else:
             self.logits, self.predictions, class_reg_loss = self.build_net(
                 input=tf.reshape(self.X, [-1, self.num_features]),
-                layer_sizes=[self.num_features] + layer_sizes + [self.num_classes],
+                layer_sizes=[self.num_features] + layer_sizes + [self.output_size],
                 nonlinearity=tf.nn.relu,
                 scope='dnn',
                 phase=self.phase)
 
             classifier_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dnn")
 
-            # Define the loss function
-            cost = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits,
-                    labels=self.label,
-                    name='loss_function')
+            if target == 'class':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, self.output_size], name='y')
+                # Define the loss function
+                cost = tf.nn.softmax_cross_entropy_with_logits_v2(
+                        logits=self.logits,
+                        labels=self.label,
+                        name='loss_function')
+            elif target == 'regres':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, 1], name='y')
+                # Define the loss function
+                cost = tf.losses.mean_squared_error(
+                        labels=self.label,
+                        predictions=self.logits,
+                        weights=1.0)
 
             cost_mean = tf.reduce_mean(cost)
             cost_summary = tf.summary.scalar('cost', tf.reduce_mean(cost))
@@ -77,7 +87,7 @@ class Baseline(Model):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             dropout: float in [0, 1]
                 The probability of keeping the neurons active
 
@@ -104,7 +114,7 @@ class Baseline(Model):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             pre_trainining: boolean
 
         """
@@ -141,11 +151,11 @@ class Bernoulli_Net(Model):
         Feature selection is applied on the features extracted
         by the conv layer.
     """
-    def __init__(self, num_features, layer_sizes, num_classes,
+    def __init__(self, num_features, layer_sizes, output_size,
                  num_samples, feedback_distance, optimizer,
-                 learning_rate, directory, reg=1.0, meta=None):
+                 learning_rate, directory, target='class', reg=1.0, meta=None):
         # Initialize the Model object
-        super().__init__(num_features, layer_sizes, num_classes,
+        super().__init__(num_features, layer_sizes, output_size,
                          optimizer, learning_rate, directory)
 
         if meta is not None:
@@ -196,18 +206,29 @@ class Bernoulli_Net(Model):
 
             self.logits, self.predictions, class_reg_loss = self.build_net(
                 input=selected_X,
-                layer_sizes=[self.num_features] + layer_sizes + [self.num_classes],
+                layer_sizes=[self.num_features] + layer_sizes + [self.output_size],
                 nonlinearity=tf.nn.relu,
                 scope='dnn',
                 phase=self.phase)
 
             classifier_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dnn")
 
-            # Define the loss function
-            cost = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits,
-                    labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes]),
-                    name='loss_function')
+            if target == 'class':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, self.output_size], name='y')
+                # Define the loss function
+                cost = tf.nn.softmax_cross_entropy_with_logits_v2(
+                        logits=self.logits,
+                        labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.output_size]),
+                        name='loss_function')
+            elif target == 'regres':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, 1], name='y')
+                # Define the loss function
+                cost = tf.losses.mean_squared_error(
+                        labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.output_size]),
+                        predictions=self.logits,
+                        weights=1.0)
 
             past_cost = tf.Variable(tf.zeros([]), name='past_cost')
 
@@ -275,13 +296,13 @@ class Cat_Net(Model):
     """ Creates a SF estimator model with categorical distribution.
         Feature selection is applied on the features extracted by the conv layer.
     """
-    def __init__(self, num_features, layer_sizes, num_classes,
+    def __init__(self, num_features, layer_sizes, output_size,
                  num_samples, feedback_distance, optimizer,
-                 learning_rate, num_cat, directory,
+                 learning_rate, num_cat, directory, target='class',
                  reg=1.0, meta=None):
 
         # Initialize the Model object
-        super().__init__(num_features, layer_sizes, num_classes,
+        super().__init__(num_features, layer_sizes, output_size,
                          optimizer, learning_rate, directory)
 
         if meta is not None:
@@ -346,18 +367,29 @@ class Cat_Net(Model):
             # Build the graph for the neural classifier
             self.logits, self.predictions, class_reg_loss = self.build_net(
                 input=selected_X,
-                layer_sizes=[self.num_features] + layer_sizes + [self.num_classes],
+                layer_sizes=[self.num_features] + layer_sizes + [self.output_size],
                 nonlinearity=tf.nn.relu,
                 scope='dnn',
                 phase=self.phase)
 
             classifier_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dnn")
 
-            # Define the loss function
-            cost = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits,
-                    labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes]),
-                    name='loss_function')
+            if target == 'class':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, self.output_size], name='y')
+                # Define the loss function
+                cost = tf.nn.softmax_cross_entropy_with_logits_v2(
+                        logits=self.logits,
+                        labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.output_size]),
+                        name='loss_function')
+            elif target == 'regres':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, 1], name='y')
+                # Define the loss function
+                cost = tf.losses.mean_squared_error(
+                        labels=tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.output_size]),
+                        predictions=self.logits,
+                        weights=1.0)
 
             past_cost = tf.Variable(tf.zeros([]), name='past_cost')
 
@@ -424,13 +456,13 @@ class Gumbel_Net(Model):
     """ Creates a PD estimator with Gumbel-softmax.
         Feature selection is applied on the features extracted by the conv layer.
     """
-    def __init__(self, num_features, layer_sizes, num_classes,
+    def __init__(self, num_features, layer_sizes, output_size,
                  feedback_distance, optimizer, learning_rate,
-                 num_cat, directory, initial_tau=10.0,
+                 num_cat, directory, target='class', initial_tau=10.0,
                  tau_decay=True, reg=1.0, meta=None):
 
         # Initialize the Model object
-        super().__init__(num_features, layer_sizes, num_classes,
+        super().__init__(num_features, layer_sizes, output_size,
                          optimizer, learning_rate, directory)
 
         if meta is not None:
@@ -499,18 +531,30 @@ class Gumbel_Net(Model):
 
             self.logits, self.predictions, class_reg_loss = self.build_net(
                 input=selected_X,
-                layer_sizes=[self.num_features] + layer_sizes + [self.num_classes],
+                layer_sizes=[self.num_features] + layer_sizes + [self.output_size],
                 nonlinearity=tf.nn.relu,
                 scope='dnn',
                 phase=self.phase)
 
             classifier_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dnn")
 
-            # Define the loss function
-            cost = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits,
-                    labels=self.label,
-                    name='loss_function')
+            if target == 'class':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, self.output_size], name='y')
+                # Define the loss function
+                cost = tf.nn.softmax_cross_entropy_with_logits_v2(
+                        logits=self.logits,
+                        labels=self.label,
+                        name='loss_function')
+            elif target == 'regres':
+                # Define placeholder for the inputs y
+                self.label = tf.placeholder(tf.float32, shape=[None, 1], name='y')
+                # Define the loss function
+                cost = tf.losses.mean_squared_error(
+                        labels=self.label,
+                        predictions=self.logits,
+                        weights=1.0)
+                        
             cost_mean = tf.reduce_mean(cost)
 
             # Define the loss function for the classifier

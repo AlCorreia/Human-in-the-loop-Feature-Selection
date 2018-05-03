@@ -30,10 +30,16 @@ def main(_):
     y = amazon_data['Y_all']
     words = amazon_data['keywords']
     FLAGS.num_features = X.shape[1]
-    enc = OneHotEncoder()
-    y = enc.fit_transform(y).toarray()
+
+    if FLAGS.target_type == 'class':
+        FLAGS.n_out = 4
+        enc = OneHotEncoder()
+        y = enc.fit_transform(y).toarray()
+    elif FLAGS.target_type == 'regres':
+        FLAGS.n_out = 1
+
     X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                        test_size=0.33,
+                                                        test_size=0.3,
                                                         random_state=42)
     pre_training = False # FLAGS.pre_train
 
@@ -42,26 +48,28 @@ def main(_):
         pre_training = False
         net = Baseline(num_features=FLAGS.num_features,
                        layer_sizes=FLAGS.arch,
-                       num_classes=4,
+                       output_size=FLAGS.n_out,
                        directory=FLAGS.dir,
                        optimizer=FLAGS.optimizer,
-                       learning_rate=FLAGS.learning_rate)
+                       learning_rate=FLAGS.learning_rate,
+                       target=FLAGS.target_type)
 
     if FLAGS.model == 'Cat':
         net = Cat_Net(num_features=FLAGS.num_features,
                       layer_sizes=FLAGS.arch,
-                      num_classes=4,
+                      output_size=FLAGS.n_out,
                       num_samples=FLAGS.num_samples,
                       feedback_distance=FLAGS.feedback_distance,
                       optimizer=FLAGS.optimizer,
                       learning_rate=FLAGS.learning_rate,
                       directory=FLAGS.dir,
-                      num_cat=FLAGS.num_cat)
+                      num_cat=FLAGS.num_cat,
+                      target=FLAGS.target_type)
 
     elif FLAGS.model == 'Gumbel':
         net = Gumbel_Net(num_features=FLAGS.num_features,
                          layer_sizes=FLAGS.arch,
-                         num_classes=4,
+                         output_size=FLAGS.n_out,
                          feedback_distance=FLAGS.feedback_distance,
                          optimizer=FLAGS.optimizer,
                          learning_rate=FLAGS.learning_rate,
@@ -69,36 +77,38 @@ def main(_):
                          num_cat=FLAGS.num_cat,
                          initial_tau=FLAGS.initial_tau,
                          tau_decay=FLAGS.tau_decay,
-                         reg=FLAGS.reg)
+                         reg=FLAGS.reg,
+                         target=FLAGS.target_type)
 
     elif FLAGS.model == 'RL':
         net = Bernoulli_Net(num_features=FLAGS.num_features,
                             layer_sizes=FLAGS.arch,
-                            num_classes=4,
+                            output_size=FLAGS.n_out,
                             num_samples=FLAGS.num_samples,
                             feedback_distance=FLAGS.feedback_distance,
                             optimizer=FLAGS.optimizer,
                             learning_rate=FLAGS.learning_rate,
-                            directory=FLAGS.dir)
+                            directory=FLAGS.dir,
+                            target=FLAGS.target_type)
 
     batch_size = FLAGS.batch_size
     if pre_training:
         print("Pre-training")
         for epoch in tqdm(range(FLAGS.epochs)):
-            _x, _y = input_fn(X_test, y_test, batch_size=batch_size, num_classes=4)
+            _x, _y = input_fn(X_test, y_test, batch_size=batch_size, output_size=FLAGS.n_out)
             net.evaluate(_x, _y, pre_trainining=True)
             # TODO: define X_train, y_train
 
             net.save()
             X_train, y_train = shuffle_in_unison(X_train, y_train)
             for i in range(0, len(X_train), batch_size):
-                _x, _y = input_fn(X_train[i:i+batch_size], y_train[i:i+batch_size], batch_size=batch_size, num_classes=4)
+                _x, _y = input_fn(X_train[i:i+batch_size], y_train[i:i+batch_size], batch_size=batch_size, output_size=FLAGS.n_out)
                 net.pre_train(_x, _y, dropout=0.8)
 
     print("Training")
     for epoch in tqdm(range(FLAGS.epochs)):
         X_train, y_train = shuffle_in_unison(X_train, y_train)
-        _x, _y = input_fn(X_test, y_test, batch_size=batch_size, num_classes=4)
+        _x, _y = input_fn(X_test, y_test, batch_size=batch_size, output_size=FLAGS.n_out)
         net.evaluate(_x, _y)
         net.save()
         for i in range(0, len(X_train), batch_size):
@@ -108,13 +118,13 @@ def main(_):
     # if FLAGS.model == 'RL' or FLAGS.model == 'Gumbel' or FLAGS.model == 'Cat' or FLAGS.model == 'RawB' or FLAGS.model == 'RawG':
     #     print("Feedback Training")
     #     for epoch in tqdm(range(FLAGS.epochs)):
-    #         _x, _y = input_fn(X_test, y_test, batch_size=batch_size, num_classes=4)
+    #         _x, _y = input_fn(X_test, y_test, batch_size=batch_size, output_size=FLAGS.n_out)
     #         net.evaluate(_x, _y)
     #         # print(net.confusion_matrix(_x, _y))
     #         net.save()
     #         X_train, y_train = shuffle_in_unison(X_train, y_train)
     #         for i in range(0, len(X_train), batch_size):
-    #             _x, _y = input_fn(X_train, y_train, batch_size=batch_size, num_classes=4)
+    #             _x, _y = input_fn(X_train, y_train, batch_size=batch_size, output_size=FLAGS.n_out)
     #             net.feedback_train(_x, _y, dropout=FLAGS.dropout)
 
 
@@ -240,6 +250,20 @@ if __name__ == '__main__':
         type=str2bool,
         default='true',
         help=''' Whether the model should be pre trained or not. '''
+    )
+
+    parser.add_argument(
+        '--target_type', '-tt',
+        type=str,
+        default='regres',
+        help=''' 'regres' for regression or 'class' for classification. '''
+    )
+
+    parser.add_argument(
+        '--n_out', '-no',
+        type=int,
+        default=1,
+        help=''' Dimension of the output. For 'regres' it is set to 1 by default . '''
     )
 
     FLAGS, unparsed = parser.parse_known_args()

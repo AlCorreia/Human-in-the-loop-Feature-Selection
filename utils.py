@@ -4,7 +4,7 @@ from scipy.stats import multivariate_normal
 import tensorflow as tf
 
 
-def input_fn(X, y, z=None, batch_size=1000, num_classes=10):
+def input_fn(X, y, z=None, batch_size=1000, output_size=10):
     """ Returns a batch of examples randomly selected from a numpy 2D-array.
 
         Parameters
@@ -27,7 +27,7 @@ def input_fn(X, y, z=None, batch_size=1000, num_classes=10):
     # Returns a random state for each episode.
     index = [np.random.randint(1, len(X)) for i in range(batch_size)]
     state = X[index].reshape(batch_size, -1)
-    label = y[index].reshape(batch_size, num_classes)
+    label = y[index].reshape(batch_size, output_size)
     if z is None:
         return state, label
     else:

@@ -9,7 +9,7 @@ from sklearn.metrics import cohen_kappa_score
 
 class Model(object):
     """ General model class. """
-    def __init__(self, num_features, layer_sizes, num_classes, optimizer,
+    def __init__(self, num_features, layer_sizes, output_size, optimizer,
                  learning_rate, directory, meta=None, num_samples=1):
         """ Initializes the model and creates a new seesion.
 
@@ -35,10 +35,9 @@ class Model(object):
         self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
 
         self.num_features = num_features
-        self.num_classes = num_classes
+        self.output_size = output_size
         self.num_samples = num_samples
-        # Define placeholder for the inputs X, the labels y and the users feedback
-        self.label = tf.placeholder(tf.float32, shape=[None, self.num_classes], name='y')
+        # Define placeholder for inputs X and users feedback
         self.X = tf.placeholder(tf.float32, shape=[None, self.num_features], name="X")
         self.attention = tf.placeholder(tf.float32, shape=[None, self.num_features], name="a")
         self.feedback = tf.placeholder(tf.float32, shape=[None, self.num_features], name="feedback")
@@ -63,7 +62,7 @@ class Model(object):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             dropout: float in [0, 1]
                 The probability of keeping the neurons active
 
@@ -91,7 +90,7 @@ class Model(object):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             dropout: float in [0, 1]
                 The probability of keeping the neurons active
 
@@ -121,7 +120,7 @@ class Model(object):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             feedback: numpy array [batch_size, num_features]
             dropout: float in [0, 1]
                 The probability of keeping the neurons active
@@ -152,7 +151,7 @@ class Model(object):
             Parameters
             ----------
             X : numpy array [batch_size, num_raw_features]
-            y : numpy array [batch_size, num_classes]
+            y : numpy array [batch_size, output_size]
             pre_trainining: boolean
 
         """
@@ -205,7 +204,7 @@ class Model(object):
 
         # Calculate the accuracy for multiclass classification
         dynamic_num_samples = tf.floordiv(tf.shape(self.attention)[0], tf.shape(self.X)[0])
-        label = tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.num_classes])
+        label = tf.reshape(tf.tile(tf.reshape(self.label, [-1]), [dynamic_num_samples]), [-1, self.output_size])
         correct_prediction = tf.equal(tf.argmax(label, axis=1), tf.argmax(self.predictions, axis=1))
         self.accuracy = tf.reduce_mean(
             tf.cast(correct_prediction, tf.float32))
@@ -217,8 +216,8 @@ class Model(object):
         # sum1 = tf.reduce_sum(confusion, axis=1)
         # expected_accuracy = tf.reduce_sum(tf.multiply(sum0, sum1)) / (tf.square(tf.reduce_sum(sum0)))
         # expected_accuracy_summary = tf.summary.scalar('expected_accuracy', expected_accuracy)
-        # w_mat = np.zeros([self.num_classes, self.num_classes], dtype=np.int)
-        # w_mat += np.arange(self.num_classes)
+        # w_mat = np.zeros([self.output_size, self.output_size], dtype=np.int)
+        # w_mat += np.arange(self.output_size)
         # w_mat = np.abs(w_mat - w_mat.T)
         # k = (self.accuracy - expected_accuracy) / (1 - expected_accuracy)
         # # Calculate the precision
