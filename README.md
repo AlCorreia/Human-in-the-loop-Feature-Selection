@@ -1,5 +1,7 @@
 # HILAM
-A tensorflow implementation of a feature selection architecture for image classification.
+A tensorflow implementation of a human-in-the-loop feature selection architecture introduced in [this AAAI 2019 paper](https://hal.inria.fr/hal-01934916/file/main.pdf).
+
+The code available here reproduces the image classification experiments presented on that paper.
 
 ## Requirements
  
@@ -29,3 +31,13 @@ They can be checked by running tensorboard and opening the browser on the localh
 tensorboard --logdir=directory_path
 ```
 
+## Citation
+
+If you find HILAM useful please cite us in your work:
+
+    @inproceedings{Correia2019,
+      author = {Correia, Alvaro H. C. and Lecue, Freddy},
+      booktitle = {Thirty-Third AAAI Conference on Artificial Intelligence},
+      title = {Human-in-the-Loop Feature Selection},
+      year = {2019}
+    }
